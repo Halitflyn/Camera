@@ -201,7 +201,11 @@
 
         // --- ФУНКЦІЯ ОНОВЛЕННЯ ІКОНКИ ---
 
-        function updateCameraIcon(isFrontActive) {
+        function updateCameraIcon(currentDeviceId) {
+            // Визначаємо, чи містить назва пристрою слова 'front' або 'user'
+            const currentCam = cameras.find(cam => cam.deviceId === currentDeviceId);
+            const isFrontActive = currentCam ? (currentCam.label.toLowerCase().includes('front') || currentCam.label.toLowerCase().includes('user')) : false;
+
             if (isFrontActive) {
                 // Якщо активна фронтальна, пропонуємо перейти на основну
                 cameraIconSpan.innerHTML = SWITCH_SVG;
@@ -217,11 +221,13 @@
 
         async function getCameras() {
             try {
-                // Отримуємо дозвіл та список пристроїв
+                // Отримуємо дозвіл на використання медіа
                 await navigator.mediaDevices.getUserMedia({ video: true }); 
+                // Отримуємо список пристроїв
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 cameras = devices.filter(device => device.kind === 'videoinput');
 
+                // Активація кнопки перемикання, якщо камер більше однієї
                 if (cameras.length > 1) {
                     switchCameraButton.disabled = false;
                 } else {
@@ -232,31 +238,24 @@
             }
         }
 
-        // Функція запускає камеру. Якщо facingModeOverride не вказано, намагається запустити 'environment'
-        async function startCamera(facingModeOverride) {
+        async function startCamera() {
             if (video.srcObject) {
                 video.srcObject.getTracks().forEach(track => track.stop());
             }
 
-            let mode = facingModeOverride; 
-
-            // Логіка визначення режиму для першого запуску (пріоритет 'environment')
-            if (!mode) {
-                try {
-                     // Спробувати запустити "environment"
-                     await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-                     mode = 'environment';
-                } catch (e) {
-                     mode = 'user'; // Якщо environment не підтримується, перейти на user
-                }
-            }
-
             const constraints = {
                 video: {
-                    facingMode: mode
+                    // Використовуємо deviceId для вибору конкретної камери,
+                    // якщо currentCameraId встановлено. Інакше використовуємо дефолт.
+                    deviceId: currentCameraId ? { exact: currentCameraId } : undefined 
                 }
             };
             
+            // Якщо currentCameraId не встановлено І немає списку камер, використовуємо простий запит
+            if (!currentCameraId && cameras.length === 0) {
+                 constraints.video = true;
+            }
+
             try {
                 const stream = await navigator.mediaDevices.getUserMedia(constraints);
                 video.srcObject = stream;
@@ -267,10 +266,11 @@
                 const track = stream.getVideoTracks()[0];
                 const settings = track.getSettings();
                 
-                // Оновлюємо currentCameraId і статус
+                // Оновлюємо currentCameraId ID поточної камери
                 currentCameraId = settings.deviceId;
-                const isFrontActive = settings.facingMode === 'user';
-                updateCameraIcon(isFrontActive);
+                
+                // Оновлюємо іконку та текст
+                updateCameraIcon(currentCameraId);
 
             } catch (err) {
                 console.error('Не вдалося отримати доступ до камери: ', err);
@@ -282,15 +282,17 @@
         function switchCamera() {
             if (cameras.length < 2) return;
 
-            // Визначаємо поточний режим, щоб знати, на який перемикатися
-            const currentStream = video.srcObject;
-            const currentTrack = currentStream ? currentStream.getVideoTracks()[0] : null;
-            const currentFacingMode = currentTrack ? currentTrack.getSettings().facingMode : 'user';
+            // Знаходимо індекс поточної камери
+            const currentIndex = cameras.findIndex(cam => cam.deviceId === currentCameraId);
+            
+            // Розраховуємо індекс наступної камери по колу
+            const nextIndex = (currentIndex + 1) % cameras.length;
+            
+            // Встановлюємо ID наступної камери
+            currentCameraId = cameras[nextIndex].deviceId;
 
-            // Перемикаємо на протилежний режим
-            const nextFacingMode = (currentFacingMode === 'user' || currentFacingMode === 'front') ? 'environment' : 'user';
-
-            startCamera(nextFacingMode); 
+            // Перезапускаємо камеру з новим ID
+            startCamera();
         }
 
         function capturePhoto() {
@@ -426,9 +428,9 @@
 
         // Ініціалізація
         window.addEventListener('load', async () => {
-            // Спочатку спробуємо отримати список камер
+            // Отримуємо список камер
             await getCameras();
-            // Запускаємо камеру (тепер вона спробує запустити 'environment' за замовчуванням)
+            // Запускаємо камеру. Браузер сам обере камеру за замовчуванням (яку він вважає "найкращою" або "першою")
             startCamera(); 
             renderGallery();
         });
