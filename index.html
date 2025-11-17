@@ -202,7 +202,6 @@
         // --- ФУНКЦІЯ ОНОВЛЕННЯ ІКОНКИ ---
 
         function updateCameraIcon(currentDeviceId) {
-            // Визначаємо, чи містить назва пристрою слова 'front' або 'user'
             const currentCam = cameras.find(cam => cam.deviceId === currentDeviceId);
             const isFrontActive = currentCam ? (currentCam.label.toLowerCase().includes('front') || currentCam.label.toLowerCase().includes('user')) : false;
 
@@ -221,18 +220,23 @@
 
         async function getCameras() {
             try {
-                // Отримуємо дозвіл на використання медіа
                 await navigator.mediaDevices.getUserMedia({ video: true }); 
-                // Отримуємо список пристроїв
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 cameras = devices.filter(device => device.kind === 'videoinput');
 
-                // Активація кнопки перемикання, якщо камер більше однієї
                 if (cameras.length > 1) {
                     switchCameraButton.disabled = false;
                 } else {
                     switchCameraButton.disabled = true;
                 }
+                
+                // === НОВА ЛОГІКА ПРІОРИТЕТУ СЕЛФІ-КАМЕРІ ===
+                // 1. Спробувати знайти камеру з позначкою 'front' або 'user'
+                const frontCamera = cameras.find(cam => cam.label.toLowerCase().includes('front') || cam.label.toLowerCase().includes('user'));
+                
+                // 2. Встановити ID фронтальної камери, якщо вона знайдена, інакше - першу в списку
+                currentCameraId = frontCamera ? frontCamera.deviceId : (cameras[0] ? cameras[0].deviceId : null);
+                
             } catch (err) {
                 console.error('Помилка при отриманні списку пристроїв або доступу до камери: ', err);
             }
@@ -245,13 +249,11 @@
 
             const constraints = {
                 video: {
-                    // Використовуємо deviceId для вибору конкретної камери,
-                    // якщо currentCameraId встановлено. Інакше використовуємо дефолт.
+                    // Використовуємо ID, який був визначений як ID фронтальної камери
                     deviceId: currentCameraId ? { exact: currentCameraId } : undefined 
                 }
             };
             
-            // Якщо currentCameraId не встановлено І немає списку камер, використовуємо простий запит
             if (!currentCameraId && cameras.length === 0) {
                  constraints.video = true;
             }
@@ -266,10 +268,9 @@
                 const track = stream.getVideoTracks()[0];
                 const settings = track.getSettings();
                 
-                // Оновлюємо currentCameraId ID поточної камери
+                // Оновлюємо ID поточної камери (на випадок, якщо browser вибрав іншу)
                 currentCameraId = settings.deviceId;
                 
-                // Оновлюємо іконку та текст
                 updateCameraIcon(currentCameraId);
 
             } catch (err) {
@@ -282,16 +283,10 @@
         function switchCamera() {
             if (cameras.length < 2) return;
 
-            // Знаходимо індекс поточної камери
             const currentIndex = cameras.findIndex(cam => cam.deviceId === currentCameraId);
-            
-            // Розраховуємо індекс наступної камери по колу
             const nextIndex = (currentIndex + 1) % cameras.length;
-            
-            // Встановлюємо ID наступної камери
             currentCameraId = cameras[nextIndex].deviceId;
 
-            // Перезапускаємо камеру з новим ID
             startCamera();
         }
 
@@ -420,7 +415,7 @@
                 return;
             }
 
-            [photos[photoIndex], photos[newIndex]] = [photos[newIndex], photos[photoIndex]];
+            [photos[photoIndex], photos[newIndex]] = [photos[newceivedIndex], photos[photoIndex]];
 
             savePhotos(photos);
             renderGallery();
@@ -428,9 +423,8 @@
 
         // Ініціалізація
         window.addEventListener('load', async () => {
-            // Отримуємо список камер
             await getCameras();
-            // Запускаємо камеру. Браузер сам обере камеру за замовчуванням (яку він вважає "найкращою" або "першою")
+            // StartCamera тепер використовує ID фронтальної камери, якщо він доступний
             startCamera(); 
             renderGallery();
         });
