@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Локальна Фотогалерея</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+            background-color: #f4f4f9;
+            color: #333;
+        }
+
+        /* Стилі для секції камери */
+        #camera-setup {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        #video-stream {
+            width: 100%;
+            max-width: 640px;
+            height: auto;
+            border: 2px solid #007bff;
+            border-radius: 4px;
+            display: block;
+            margin: 0 auto 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+
+        #capture-button {
+            background-color: #28a745;
+            color: white;
+        }
+        #capture-button:hover {
+            background-color: #218838;
+        }
+
+        /* Стилі для галереї */
+        #gallery-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+            padding-top: 20px;
+        }
+
+        .photo-card {
+            background-color: #fff;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            padding: 10px;
+            width: 220px; /* Трохи більше, ніж мініатюра */
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .photo-card img {
+            width: 200px; /* Мініатюра */
+            height: 200px;
+            object-fit: cover;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            cursor: pointer;
+        }
+
+        .photo-card .photo-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            word-break: break-all;
+            text-align: center;
+        }
+
+        .photo-card .actions {
+            display: flex;
+            gap: 5px;
+            margin-top: 5px;
+        }
+
+        .actions button {
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+        .actions .delete-btn { background-color: #dc3545; color: white; }
+        .actions .delete-btn:hover { background-color: #c82333; }
+        .actions .edit-btn { background-color: #ffc107; color: #333; }
+        .actions .edit-btn:hover { background-color: #e0a800; }
+        .actions .move-btn { background-color: #007bff; color: white; }
+        .actions .move-btn:hover { background-color: #0056b3; }
+    </style>
+</head>
+<body>
+
+    <h1>📸 Локальна Фотогалерея</h1>
+
+    <div id="camera-setup">
+        <h2>1. Зробити Фото</h2>
+        <video id="video-stream" autoplay playsinline></video>
+        <canvas id="canvas-capture" style="display:none;"></canvas>
+
+        <button id="capture-button" disabled>Зробити фото</button>
+    </div>
+
+    <hr>
+
+    <div id="gallery-section">
+        <h2>2. Ваша Галерея</h2>
+        <div id="gallery-container">
+            <p id="no-photos-message">У галереї поки що немає фото. Зробіть перший знімок!</p>
+        </div>
+    </div>
+
+    <script>
+        // Імена сховищ
+        const STORAGE_KEY = 'localPhotoGallery';
+        
+        // DOM-елементи
+        const video = document.getElementById('video-stream');
+        const canvas = document.getElementById('canvas-capture');
+        const captureButton = document.getElementById('capture-button');
+        const galleryContainer = document.getElementById('gallery-container');
+        const noPhotosMessage = document.getElementById('no-photos-message');
+
+        // --- 1. ДОСТУП ДО КАМЕРИ І ЗЙОМКА ---
+
+        async function startCamera() {
+            try {
+                // Запитуємо доступ до відео
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                // Чекаємо, поки відео почне грати
+                await video.play();
+                captureButton.disabled = false;
+                captureButton.textContent = 'Зробити фото';
+                console.log('Камера успішно запущена.');
+            } catch (err) {
+                console.error('Не вдалося отримати доступ до камери: ', err);
+                captureButton.textContent = 'Камера недоступна 😟';
+                alert('Помилка доступу до камери. Перевірте дозволи.');
+            }
+        }
+
+        function capturePhoto() {
+            // Встановлюємо розміри canvas відповідно до розмірів відео
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+
+            // Малюємо поточний кадр на canvas
+            const context = canvas.getContext('2d');
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Отримуємо Data URL (Base64) зображення
+            // Використовуємо 'image/jpeg' для меншого розміру файлу
+            const photoDataURL = canvas.toDataURL('image/jpeg', 0.9); 
+
+            // Створюємо об'єкт фото з назвою та Data URL
+            const photo = {
+                id: Date.now(), // Унікальний ID
+                name: `Фото-${new Date().toLocaleTimeString('uk-UA')}`,
+                data: photoDataURL
+            };
+
+            // Зберігаємо та оновлюємо галерею
+            savePhoto(photo);
+            renderGallery();
+
+            alert('Фото збережено!');
+        }
+
+        captureButton.addEventListener('click', capturePhoto);
+        window.addEventListener('load', startCamera);
+
+        // --- 2. РОБОТА З LOCAL STORAGE ---
+
+        function getPhotos() {
+            const photosJSON = localStorage.getItem(STORAGE_KEY);
+            // Повертаємо масив, якщо є дані, або порожній масив
+            return photosJSON ? JSON.parse(photosJSON) : []; 
+        }
+
+        function savePhotos(photosArray) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(photosArray));
+        }
+
+        function savePhoto(newPhoto) {
+            const photos = getPhotos();
+            // Додаємо нове фото на початок масиву (щоб нові були першими)
+            photos.unshift(newPhoto); 
+            savePhotos(photos);
+        }
+
+        // --- 3. ОНОВЛЕННЯ ГАЛЕРЕЇ ТА ФУНКЦІОНАЛ ---
+
+        function renderGallery() {
+            const photos = getPhotos();
+            galleryContainer.innerHTML = ''; // Очищаємо галерею
+
+            if (photos.length === 0) {
+                noPhotosMessage.style.display = 'block';
+                return;
+            } else {
+                noPhotosMessage.style.display = 'none';
+            }
+
+            photos.forEach((photo, index) => {
+                const card = createPhotoCard(photo, index, photos.length);
+                galleryContainer.appendChild(card);
+            });
+        }
+
+        function createPhotoCard(photo, index, totalPhotos) {
+            const card = document.createElement('div');
+            card.className = 'photo-card';
+            card.dataset.id = photo.id;
+            
+            card.innerHTML = `
+                <div class="photo-title">${photo.name}</div>
+                <img src="${photo.data}" alt="${photo.name}">
+                <div class="actions">
+                    <button class="edit-btn">📝 Редагувати</button>
+                    <button class="delete-btn">🗑️ Видалити</button>
+                    <button class="move-btn" data-direction="left" ${index === 0 ? 'disabled' : ''}>◀️</button>
+                    <button class="move-btn" data-direction="right" ${index === totalPhotos - 1 ? 'disabled' : ''}>▶️</button>
+                </div>
+            `;
+            
+            // Додаємо обробники подій
+            card.querySelector('.delete-btn').addEventListener('click', () => deletePhoto(photo.id));
+            card.querySelector('.edit-btn').addEventListener('click', () => editPhotoName(photo.id, photo.name));
+            card.querySelectorAll('.move-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => movePhoto(photo.id, e.target.dataset.direction));
+            });
+
+            return card;
+        }
+
+        // --- 4. ФУНКЦІОНАЛ: ВИДАЛЕННЯ, РЕДАГУВАННЯ, ПЕРЕМІЩЕННЯ ---
+
+        function deletePhoto(id) {
+            if (confirm('Ви впевнені, що хочете видалити це фото?')) {
+                let photos = getPhotos();
+                // Фільтруємо масив, залишаючи лише ті фото, ID яких не збігається з видаляємим
+                photos = photos.filter(photo => photo.id !== id);
+                savePhotos(photos);
+                renderGallery();
+            }
+        }
+
+        function editPhotoName(id, currentName) {
+            const newName = prompt('Введіть нову назву для фото:', currentName);
+            if (newName && newName.trim() !== currentName) {
+                let photos = getPhotos();
+                const photoIndex = photos.findIndex(photo => photo.id === id);
+
+                if (photoIndex !== -1) {
+                    photos[photoIndex].name = newName.trim();
+                    savePhotos(photos);
+                    renderGallery();
+                }
+            }
+        }
+
+        function movePhoto(id, direction) {
+            let photos = getPhotos();
+            const photoIndex = photos.findIndex(photo => photo.id === id);
+
+            if (photoIndex === -1) return;
+
+            let newIndex = photoIndex;
+
+            if (direction === 'left' && photoIndex > 0) {
+                newIndex = photoIndex - 1;
+            } else if (direction === 'right' && photoIndex < photos.length - 1) {
+                newIndex = photoIndex + 1;
+            } else {
+                return; // Нікуди переміщати
+            }
+
+            // Змінюємо елементи місцями: [a, b] -> [b, a]
+            [photos[photoIndex], photos[newIndex]] = [photos[newIndex], photos[photoIndex]];
+
+            savePhotos(photos);
+            renderGallery();
+        }
+
+        // Ініціалізація галереї при завантаженні
+        window.addEventListener('load', renderGallery);
+
+    </script>
+</body>
+</html>
