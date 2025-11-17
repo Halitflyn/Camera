@@ -7,14 +7,19 @@
     <style>
         body {
             font-family: sans-serif;
-            margin: 20px;
+            margin: 0;
+            padding: 20px;
             background-color: #f4f4f9;
             color: #333;
+            text-align: center;
+        }
+
+        h1 {
+            color: #007bff;
         }
 
         /* Стилі для секції камери */
         #camera-setup {
-            text-align: center;
             margin-bottom: 40px;
             padding: 20px;
             background-color: #fff;
@@ -31,9 +36,16 @@
             display: block;
             margin: 0 auto 20px;
         }
+        
+        #controls {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
 
         button {
-            padding: 10px 20px;
+            padding: 10px 15px;
             font-size: 16px;
             cursor: pointer;
             border: none;
@@ -47,6 +59,14 @@
         }
         #capture-button:hover {
             background-color: #218838;
+        }
+        
+        #switch-camera-button {
+            background-color: #007bff;
+            color: white;
+        }
+        #switch-camera-button:hover {
+            background-color: #0056b3;
         }
 
         /* Стилі для галереї */
@@ -63,7 +83,7 @@
             border: 1px solid #ccc;
             border-radius: 8px;
             padding: 10px;
-            width: 220px; /* Трохи більше, ніж мініатюра */
+            width: 220px;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
             display: flex;
             flex-direction: column;
@@ -107,13 +127,19 @@
 <body>
 
     <h1>📸 Локальна Фотогалерея</h1>
+    
+    <hr>
 
     <div id="camera-setup">
-        <h2>1. Зробити Фото</h2>
+        <h2>1. Камера</h2>
+        
         <video id="video-stream" autoplay playsinline></video>
         <canvas id="canvas-capture" style="display:none;"></canvas>
 
-        <button id="capture-button" disabled>Зробити фото</button>
+        <div id="controls">
+            <button id="capture-button" disabled>Зробити фото</button>
+            <button id="switch-camera-button" disabled>Перемкнути камеру 🔄</button>
+        </div>
     </div>
 
     <hr>
@@ -133,26 +159,92 @@
         const video = document.getElementById('video-stream');
         const canvas = document.getElementById('canvas-capture');
         const captureButton = document.getElementById('capture-button');
+        const switchCameraButton = document.getElementById('switch-camera-button');
         const galleryContainer = document.getElementById('gallery-container');
         const noPhotosMessage = document.getElementById('no-photos-message');
 
+        let currentCameraId = null; // Зберігаємо ID поточної камери
+        let cameras = []; // Зберігатимемо список доступних камер
+
         // --- 1. ДОСТУП ДО КАМЕРИ І ЗЙОМКА ---
 
-        async function startCamera() {
+        async function getCameras() {
             try {
-                // Запитуємо доступ до відео
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                // Запит дозволу, щоб отримати мітки пристроїв (label)
+                await navigator.mediaDevices.getUserMedia({ video: true }); 
+
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                cameras = devices.filter(device => device.kind === 'videoinput');
+
+                if (cameras.length > 1) {
+                    switchCameraButton.disabled = false;
+                } else {
+                    switchCameraButton.disabled = true;
+                }
+
+                // Встановлюємо початковий ID: якщо камер багато, пробуємо знайти "задню" (environment), інакше беремо першу
+                const environmentCamera = cameras.find(cam => cam.label.toLowerCase().includes('back') || cam.label.toLowerCase().includes('environment'));
+                currentCameraId = environmentCamera ? environmentCamera.deviceId : (cameras[0] ? cameras[0].deviceId : null);
+
+            } catch (err) {
+                console.error('Помилка при отриманні списку пристроїв або доступу до камери: ', err);
+                // Залишаємо currentCameraId = null, щоб startCamera спробувала з дефолтними обмеженнями
+            }
+        }
+
+        async function startCamera() {
+            if (video.srcObject) {
+                // Зупиняємо попередній потік
+                video.srcObject.getTracks().forEach(track => track.stop());
+            }
+
+            // Намагаємося застосувати бажані обмеження (бажану камеру)
+            const constraints = {
+                video: {
+                    deviceId: currentCameraId ? { exact: currentCameraId } : undefined 
+                }
+            };
+            
+            // Якщо currentCameraId не встановлено, просто використовуємо "video: true"
+            if (!currentCameraId && cameras.length === 0) {
+                 constraints.video = true;
+            }
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
                 video.srcObject = stream;
-                // Чекаємо, поки відео почне грати
                 await video.play();
                 captureButton.disabled = false;
                 captureButton.textContent = 'Зробити фото';
-                console.log('Камера успішно запущена.');
+                
+                // Якщо currentCameraId ще не було встановлено, оновлюємо його після успішного запуску
+                if (!currentCameraId) {
+                    const track = stream.getVideoTracks()[0];
+                    currentCameraId = track.getSettings().deviceId;
+                    console.log("Камера запущена з ID:", currentCameraId);
+                }
+
             } catch (err) {
                 console.error('Не вдалося отримати доступ до камери: ', err);
                 captureButton.textContent = 'Камера недоступна 😟';
                 alert('Помилка доступу до камери. Перевірте дозволи.');
             }
+        }
+
+        function switchCamera() {
+            if (cameras.length < 2) return;
+
+            // Знаходимо індекс поточної камери
+            const currentIndex = cameras.findIndex(cam => cam.deviceId === currentCameraId);
+            
+            // Розраховуємо індекс наступної камери по колу
+            const nextIndex = (currentIndex + 1) % cameras.length;
+            
+            // Встановлюємо ID наступної камери
+            currentCameraId = cameras[nextIndex].deviceId;
+
+            // Перезапускаємо камеру з новим ID
+            startCamera();
         }
 
         function capturePhoto() {
@@ -164,18 +256,15 @@
             const context = canvas.getContext('2d');
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-            // Отримуємо Data URL (Base64) зображення
-            // Використовуємо 'image/jpeg' для меншого розміру файлу
-            const photoDataURL = canvas.toDataURL('image/jpeg', 0.9); 
+            // Отримуємо Data URL зображення (використовуємо JPEG для меншого розміру)
+            const photoDataURL = canvas.toDataURL('image/jpeg', 0.8); 
 
-            // Створюємо об'єкт фото з назвою та Data URL
             const photo = {
-                id: Date.now(), // Унікальний ID
+                id: Date.now(),
                 name: `Фото-${new Date().toLocaleTimeString('uk-UA')}`,
                 data: photoDataURL
             };
 
-            // Зберігаємо та оновлюємо галерею
             savePhoto(photo);
             renderGallery();
 
@@ -183,13 +272,13 @@
         }
 
         captureButton.addEventListener('click', capturePhoto);
-        window.addEventListener('load', startCamera);
+        switchCameraButton.addEventListener('click', switchCamera);
+
 
         // --- 2. РОБОТА З LOCAL STORAGE ---
 
         function getPhotos() {
             const photosJSON = localStorage.getItem(STORAGE_KEY);
-            // Повертаємо масив, якщо є дані, або порожній масив
             return photosJSON ? JSON.parse(photosJSON) : []; 
         }
 
@@ -199,7 +288,7 @@
 
         function savePhoto(newPhoto) {
             const photos = getPhotos();
-            // Додаємо нове фото на початок масиву (щоб нові були першими)
+            // Додаємо нове фото на початок масиву
             photos.unshift(newPhoto); 
             savePhotos(photos);
         }
@@ -239,7 +328,6 @@
                 </div>
             `;
             
-            // Додаємо обробники подій
             card.querySelector('.delete-btn').addEventListener('click', () => deletePhoto(photo.id));
             card.querySelector('.edit-btn').addEventListener('click', () => editPhotoName(photo.id, photo.name));
             card.querySelectorAll('.move-btn').forEach(btn => {
@@ -249,12 +337,9 @@
             return card;
         }
 
-        // --- 4. ФУНКЦІОНАЛ: ВИДАЛЕННЯ, РЕДАГУВАННЯ, ПЕРЕМІЩЕННЯ ---
-
         function deletePhoto(id) {
             if (confirm('Ви впевнені, що хочете видалити це фото?')) {
                 let photos = getPhotos();
-                // Фільтруємо масив, залишаючи лише ті фото, ID яких не збігається з видаляємим
                 photos = photos.filter(photo => photo.id !== id);
                 savePhotos(photos);
                 renderGallery();
@@ -288,18 +373,25 @@
             } else if (direction === 'right' && photoIndex < photos.length - 1) {
                 newIndex = photoIndex + 1;
             } else {
-                return; // Нікуди переміщати
+                return;
             }
 
-            // Змінюємо елементи місцями: [a, b] -> [b, a]
+            // Змінюємо елементи місцями
             [photos[photoIndex], photos[newIndex]] = [photos[newIndex], photos[photoIndex]];
 
             savePhotos(photos);
             renderGallery();
         }
 
-        // Ініціалізація галереї при завантаженні
-        window.addEventListener('load', renderGallery);
+        // Ініціалізація
+        window.addEventListener('load', async () => {
+            // Отримуємо список камер перед запуском
+            await getCameras();
+            // Запускаємо камеру (вибирається задня, якщо доступна)
+            startCamera();
+            // Відображаємо галерею
+            renderGallery();
+        });
 
     </script>
 </body>
