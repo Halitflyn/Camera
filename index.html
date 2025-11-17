@@ -61,12 +61,28 @@
             background-color: #218838;
         }
         
+        /* Стилі для кнопки перемикання камери */
         #switch-camera-button {
             background-color: #007bff;
             color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         #switch-camera-button:hover {
             background-color: #0056b3;
+        }
+        
+        /* Стиль для відображення іконок */
+        #switch-camera-button span {
+            display: inline-flex;
+            margin-right: 8px;
+            transition: transform 0.3s ease;
+        }
+
+        /* Ефект наведення: іконка "обертається" на 180 градусів */
+        #switch-camera-button:hover span {
+            transform: rotate(180deg); 
         }
 
         /* Стилі для галереї */
@@ -138,7 +154,12 @@
 
         <div id="controls">
             <button id="capture-button" disabled>Зробити фото</button>
-            <button id="switch-camera-button" disabled>Перемкнути камеру 🔄</button>
+            
+            <button id="switch-camera-button" disabled>
+                <span id="camera-icon">
+                    </span>
+                <span id="camera-label">Перемкнути камеру</span>
+            </button>
         </div>
     </div>
 
@@ -160,35 +181,60 @@
         const canvas = document.getElementById('canvas-capture');
         const captureButton = document.getElementById('capture-button');
         const switchCameraButton = document.getElementById('switch-camera-button');
+        const cameraIconSpan = document.getElementById('camera-icon');
+        const cameraLabelSpan = document.getElementById('camera-label');
         const galleryContainer = document.getElementById('gallery-container');
         const noPhotosMessage = document.getElementById('no-photos-message');
 
-        let currentCameraId = null; // Зберігаємо ID поточної камери
-        let cameras = []; // Зберігатимемо список доступних камер
+        let currentCameraId = null;
+        let cameras = [];
+
+        // --- SVG ІКОНКИ ---
+        
+        // Звичайна іконка камери
+        const CAMERA_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>';
+        
+        // Іконка перемикання (стрілки)
+        const SWITCH_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H7l-3 3m10 8h6l-3 3"></path><circle cx="12" cy="13" r="4"></circle></svg>';
+
+
+        // --- ФУНКЦІЯ ОНОВЛЕННЯ ІКОНКИ ---
+
+        function updateCameraIcon(isFrontActive) {
+            // isFrontActive = true, якщо активна фронтальна (селфі) камера
+            if (isFrontActive) {
+                // Якщо активна фронтальна, показуємо іконку перемикання і пропонуємо перейти на основну
+                cameraIconSpan.innerHTML = SWITCH_SVG;
+                cameraLabelSpan.textContent = 'На Основну';
+            } else {
+                // Якщо активна основна, показуємо іконку камери і пропонуємо перейти на фронтальну
+                cameraIconSpan.innerHTML = CAMERA_SVG;
+                cameraLabelSpan.textContent = 'На Фронтальну';
+            }
+        }
 
         // --- 1. ДОСТУП ДО КАМЕРИ І ЗЙОМКА ---
 
         async function getCameras() {
             try {
-                // Запит дозволу, щоб отримати мітки пристроїв (label)
+                // Отримуємо дозвіл та список пристроїв
                 await navigator.mediaDevices.getUserMedia({ video: true }); 
-
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 cameras = devices.filter(device => device.kind === 'videoinput');
 
+                // Активація кнопки перемикання, якщо камер більше однієї
                 if (cameras.length > 1) {
                     switchCameraButton.disabled = false;
                 } else {
                     switchCameraButton.disabled = true;
                 }
 
-                // Встановлюємо початковий ID: якщо камер багато, пробуємо знайти "задню" (environment), інакше беремо першу
+                // Встановлення початкової камери (перевага надається задній/основній)
                 const environmentCamera = cameras.find(cam => cam.label.toLowerCase().includes('back') || cam.label.toLowerCase().includes('environment'));
                 currentCameraId = environmentCamera ? environmentCamera.deviceId : (cameras[0] ? cameras[0].deviceId : null);
 
             } catch (err) {
                 console.error('Помилка при отриманні списку пристроїв або доступу до камери: ', err);
-                // Залишаємо currentCameraId = null, щоб startCamera спробувала з дефолтними обмеженнями
             }
         }
 
@@ -198,14 +244,12 @@
                 video.srcObject.getTracks().forEach(track => track.stop());
             }
 
-            // Намагаємося застосувати бажані обмеження (бажану камеру)
             const constraints = {
                 video: {
                     deviceId: currentCameraId ? { exact: currentCameraId } : undefined 
                 }
             };
             
-            // Якщо currentCameraId не встановлено, просто використовуємо "video: true"
             if (!currentCameraId && cameras.length === 0) {
                  constraints.video = true;
             }
@@ -217,12 +261,16 @@
                 captureButton.disabled = false;
                 captureButton.textContent = 'Зробити фото';
                 
-                // Якщо currentCameraId ще не було встановлено, оновлюємо його після успішного запуску
                 if (!currentCameraId) {
                     const track = stream.getVideoTracks()[0];
                     currentCameraId = track.getSettings().deviceId;
-                    console.log("Камера запущена з ID:", currentCameraId);
                 }
+
+                // Визначення, яка камера активна для оновлення іконки
+                const currentCam = cameras.find(cam => cam.deviceId === currentCameraId);
+                const isFrontActive = currentCam ? (currentCam.label.toLowerCase().includes('front') || currentCam.label.toLowerCase().includes('user')) : false;
+                updateCameraIcon(isFrontActive);
+
 
             } catch (err) {
                 console.error('Не вдалося отримати доступ до камери: ', err);
@@ -234,29 +282,20 @@
         function switchCamera() {
             if (cameras.length < 2) return;
 
-            // Знаходимо індекс поточної камери
             const currentIndex = cameras.findIndex(cam => cam.deviceId === currentCameraId);
-            
-            // Розраховуємо індекс наступної камери по колу
             const nextIndex = (currentIndex + 1) % cameras.length;
-            
-            // Встановлюємо ID наступної камери
             currentCameraId = cameras[nextIndex].deviceId;
 
-            // Перезапускаємо камеру з новим ID
             startCamera();
         }
 
         function capturePhoto() {
-            // Встановлюємо розміри canvas відповідно до розмірів відео
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
 
-            // Малюємо поточний кадр на canvas
             const context = canvas.getContext('2d');
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-            // Отримуємо Data URL зображення (використовуємо JPEG для меншого розміру)
             const photoDataURL = canvas.toDataURL('image/jpeg', 0.8); 
 
             const photo = {
@@ -288,7 +327,6 @@
 
         function savePhoto(newPhoto) {
             const photos = getPhotos();
-            // Додаємо нове фото на початок масиву
             photos.unshift(newPhoto); 
             savePhotos(photos);
         }
@@ -297,7 +335,7 @@
 
         function renderGallery() {
             const photos = getPhotos();
-            galleryContainer.innerHTML = ''; // Очищаємо галерею
+            galleryContainer.innerHTML = ''; 
 
             if (photos.length === 0) {
                 noPhotosMessage.style.display = 'block';
@@ -376,7 +414,6 @@
                 return;
             }
 
-            // Змінюємо елементи місцями
             [photos[photoIndex], photos[newIndex]] = [photos[newIndex], photos[photoIndex]];
 
             savePhotos(photos);
@@ -385,11 +422,10 @@
 
         // Ініціалізація
         window.addEventListener('load', async () => {
-            // Отримуємо список камер перед запуском
+            // Встановлюємо початкову іконку перед запуском камери
+            updateCameraIcon(false); 
             await getCameras();
-            // Запускаємо камеру (вибирається задня, якщо доступна)
             startCamera();
-            // Відображаємо галерею
             renderGallery();
         });
 
