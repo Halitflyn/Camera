@@ -34,16 +34,21 @@
     
     <div id="loading-message">
         <h2>Завантаження AR-сцени...</h2>
-        <p>Натисніть "Дозволити" для доступу до камери.</p>
-        <p>Після завантаження наведіть камеру на маркер 'Hiro' (див. інструкції).</p>
+        <p>Натисніть "Дозволити" для доступу до камери та зачекайте кілька секунд.</p>
+        <p>Після зникнення повідомлення наведіть камеру на маркер 'Hiro'.</p>
         <p style="font-size: 0.8em; margin-top: 20px;">
-            **Увага:** Цей функціонал вимагає https-з'єднання або запуску файлу локально (натисніть двічі на файл).
+            **Увага:** Цей функціонал краще працює через локальний вебсервер (наприклад, Live Server).
         </p>
     </div>
 
     <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false;" 
              loading-screen="enabled: false;" 
              id="ar-scene">
+        
+        <a-assets>
+            <img id="svg-asset" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI0NSIgZmlsbD0iIzAwN2JmZiIvPjxwYXRoIGQ9Ik0zMCA0NWw1IDUgMjAgLTIwIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjEwIiBmaWxsPSJub25lIi8+PC9zdmc+">
+        </a-assets>
+
         
         <a-marker preset="hiro">
             
@@ -62,12 +67,8 @@
         <a-entity camera></a-entity>
     </a-scene>
     
-    <a-assets>
-        <img id="svg-asset" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI0NSIgZmlsbD0iIzAwN2JmZiIvPjxwYXRoIGQ9Ik0zMCA0NWw1IDUgMjAgLTIwIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjEwIiBmaWxsPSJub25lIi8+PC9zdmc+">
-    </a-assets>
-    
     <script>
-        // Скрипт для приховування повідомлення після завантаження
+        // Скрипт для приховування повідомлення після успішного запуску рендерингу
         document.addEventListener('DOMContentLoaded', () => {
             const scene = document.getElementById('ar-scene');
             const loadingMessage = document.getElementById('loading-message');
@@ -75,7 +76,7 @@
             // AR.js видає подію 'render-started' після успішного запуску
             scene.addEventListener('render-started', function () {
                 loadingMessage.style.display = 'none';
-                console.log('AR-сцена готова.');
+                console.log('AR-сцена готова. Шукайте маркер Hiro.');
             });
         });
     </script>
